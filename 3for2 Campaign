@@ -337,3 +337,63 @@ GROUP BY
 ORDER BY
     SaleWeek,           -- Orders by week first
     TotalItemsSold DESC; -- Then by total sold within that week
+
+
+
+###### Generating random 2 winners for specific showrooms that have achieved targets ######
+
+WITH EligibleAgents AS (
+    SELECT DISTINCT
+        dst.FullName AS SalesAgentName,
+        dst.AgentTeam
+    FROM #Final f
+    LEFT JOIN [hc-dw].dw.dbo.Dim_StaffTeam dst WITH (NOLOCK)
+        ON f.StaffTeamKey = dst.StaffTeamKey
+    WHERE 
+        f.NSVItems > 0
+        AND f.GiftFlag = 0
+        AND f.RedispatchFlag = 0
+        AND (
+            f.AXCategory IN ('Plain','Geo','Floral')
+            OR f.Pattern IN ('Audrey','Shirley','Kelsey','Waverly','Angelique')
+        )
+        AND f.AgentTeam IN (
+            'SHOWROOM BOTSHABELO',
+            'SHOWROOM NELSPRUIT',
+            'SHOWROOM BRIDGE CITY',
+            'SHOWROOM MAPONYA',
+            'SHOWROOM CORKWOOD',
+            'SHOWROOM MBHASHE',
+            'SHOWROOM RUSTENBURG',
+            'SHOWROOM HEBRON',
+            'SHOWROOM MTHATA',
+            'SHOWROOM GILLWELL',
+            'SHOWROOM HEMMINGWAYS',
+            'SHOWROOM HAZYVIEW',
+            'SHOWROOM MASINGITA MALL',
+            'SHOWROOM PORT SHEPSTONE',
+            'SHOWROOM TEMBISA',
+            'SHOWROOM SPRINGS',
+            'SHOWROOM PRINCESS MKABAYI',
+            'SHOWROOM KOKSTAD',
+            'SHOWROOM BLOEMFONTEIN',
+            'SHOWROOM PAN AFRICA',
+            'SHOWROOM UMLAZI'
+        )
+        AND f.MBOrdSourceKey = 7
+        AND f.MBOrdSource = 'Showroom'
+        -- Only week 32
+        AND DATEPART(WEEK, TRY_CAST(
+            SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+            SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+            SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+        ) = 32
+)
+-- pick 2 random winners
+SELECT TOP 2
+    SalesAgentName,
+    AgentTeam
+FROM EligibleAgents
+ORDER BY NEWID();
+
+
