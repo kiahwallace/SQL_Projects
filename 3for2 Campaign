@@ -1,0 +1,339 @@
+-- Sales cube 
+
+###### This SQL script builds a detailed sales dataset starting from a given date. It first determines any order holds, then pulls sales orders and enriches them with info about agents, products, campaigns, order sources, and other attributes. The data is stored step by step in temporary tables, and the final result (`#Final`) contains all relevant sales details ready for analysis. ######
+
+
+declare @INPUT_DATE int
+set @INPUT_DATE = 20221101	--Change Starting Date Here
+
+SELECT DISTINCT 
+fo.OrderKey, 
+tmp.ordno, 
+tmp.ordlineno,
+CASE
+WHEN tmp.DspMthdNo = 0 THEN 5 --:'Invalid Despatch Method'        
+WHEN tmp.ProductActionHold = 'True' THEN 1 --: 'Product Action Hold'        
+WHEN tmp.CashHold = 'True' THEN 2 --:'Cash Order: Cash Hold'        
+WHEN tmp.Legal = 'True' THEN 3 --:'Legal Hold'        
+WHEN tmp.ConsHold = 'Reserved Order on hold by Console' THEN 4 --:'Reserved Orders on hold by Console'        
+ELSE 6                    --:'No Hold'        
+END AS 'OrderHoldTypeID'
+INTO #CTE1
+FROM		[Omega].dbo.OrderDemandBreakdown AS tmp WITH(NOLOCK) 
+LEFT JOIN	[HC-DW].[DW].dbo.fact_order fo WITH(NOLOCK) ON tmp.ordno = fo.ordno AND tmp.ordlineno = fo.ordlineno
+WHERE tmp.billaccttype <> 0    
+
+
+SELECT DISTINCT 
+	soa.OrderDteKey, 
+	soa.OrderKey, 
+	soa.PromKey, 
+	soa.ProdPromKey, 
+	soa.CurrItemKey, 
+	soa.OrigItemKey,
+	CASE --THEN 
+		WHEN soa.OrdSourceKey = 9 THEN -1
+		WHEN soa.OrdSourceKey = 10 THEN -1
+		ELSE soa.OrdSourceKey
+	END AS 'OrdSourceKey', 
+	soa.DespatchDteKey, 
+	soa.GRDteKey, 
+	soa.MktMaterialKey, 
+	soa.BillNo, 
+	soa.NewCRFlagKey, 
+	soa.ScoreCatCurr1Key, 
+	soa.DespMethodKey, 
+	soa.CurrOrdStatus, 
+	soa.GRClassKey, 
+	soa.AcctTypeKey, 
+	soa.Substitution, 
+	soa.CapturetoDespatch, 
+	soa.CurrVettKey, 
+	soa.StatusDteKey, 
+	soa.UnqItem, 
+	soa.ProductActionCodeKey, 
+	soa.AcctClassKey, 
+	soa.InstalOptionKey, 
+	soa.MonthsSinceKey, 
+	soa.LegalFlagKey, 
+	soa.OrdMOBKey, 
+	soa.OrdMSCAKey, 
+	soa.NewIndicatorsKey, 
+	soa.PersonNo, 
+	soa.OrdNo, 
+	soa.Qty, 
+	soa.SalesPrice, 
+	soa.GRQty, 
+	soa.GRAmount, 
+	soa.DespatchQty, 
+	soa.DespatchAmount, 
+	soa.NSVItems, 
+	soa.NSVAmount, 
+	soa.OrdPrice, 
+	soa.InstAmt, 
+	soa.BasePrice, 
+	soa.ItemStdCost, 
+	soa.ItemStdCostInclFreeGift, 
+	soa.VettPendDteKey, 
+	soa.VettPassDteKey, 
+	soa.VettFailDteKey, 
+	soa.VettCancelDteKey,
+	CASE
+		WHEN soa.PassedDteKey = '12345678' THEN 19000101
+		ELSE soa.PassedDteKey
+	END AS 'PassedDteKey', 
+	soa.IntakeCategoryKey, 
+	ig.IntakeCategory as IntakeCategory1,
+	ig.IntakeCategoryGroup,
+	soa.CancelDteKey, 
+	ISNULL(soa.customerAttributesKey, -1) AS CustomerAttributesKey,
+	soa.PersonSegmentMailDteKey, 
+	soa.TargetedKey, 
+	soa.PersonSegmentOrderDteKey, 
+	soa.PersonSegmentSelectionDateKey, 
+	ISNULL(soa.ProductKey, -1) ProductKey,        
+	soa.CountryKey, 
+	soa.GiftFlag,
+	CASE
+		WHEN soa.RedispatchFlag > 1 THEN 1
+		ELSE soa.RedispatchFlag
+	END AS RedispatchFlag, 
+	ReturnReasonkey, 
+	ReturnTypeKey, 
+	ISNULL(ItemStdcost, 0.00) * soa.qty AS COGS, 
+	soa.FacilityCustGrpKey, 
+	soa.EmployeeKey, 
+	soa.StaffTeamKey, 
+	dst.AgentTeam, 
+	dst.FullName as AgentName,
+	dst.Department, 
+	ISNULL(tmp.orderholdtypeid, 6) AS OrderHoldTypeID, 
+	ISNULL(soa.ShortCodeKey, -1) AS ShortCodeKey, 
+	ISNULL(soa.DespCustTypeKey, -1) AS DespCustTypeKey, 
+	ISNULL(soa.CampaignKey, -1) AS CampaignKey, 
+	REPLACE(soa.ListModelCampaignKey, '_', '') AS ListModelCampaignKey, 
+	soa.OrdTypeKey, 
+	ISNULL(soa.AgentKey, -1) AgentKey, 
+	ISNULL(soa.SAgtNo, -1) AgentNo, 
+	ISNULL(soa.NameCommission, 0) NameCommission, 
+	ISNULL(soa.OrderCommission, 0) OrderCommission, 
+	ISNULL(soa.MBOrdSourceKey, -1) MBOrdSourceKey, 
+	ISNULL(soa.IsFreshStartOrder, 0) IsFreshStartOrder, 
+	ISNULL(soa.IsGuestCheckoutOrder, 0) IsGuestCheckoutOrder, 
+	soa.GAPlatformDeviceKey,
+	soa.GAChannelGroupingKey, 
+	soa.GATrafficSourcesKey, 
+	soa.CaptureDteKey, 
+	soa.DeliveryFee, 
+	ISNULL(soa.DMAtOrderKey, 0) DMAtOrderKey, 
+	ISNULL(soa.DMOrigAtOrderKey, 0) DMOrigAtOrderKey, 
+	ISNULL(soa.PaymentStrategyKey, -1) AS PaymentStrategyKey,
+	ORH.CollectSiteNo 	
+INTO #View_Fact_SOA
+FROM [HC-DW].[DW].dbo.FACT_SalesOrderAnalysis_NSV_Gft_Reds AS soa WITH(NOLOCK)
+    LEFT OUTER JOIN	[HC-DW].[DW].dbo.DIM_CustomerAttributes AS ca WITH(NOLOCK) ON ISNULL(soa.CustomerAttributesKey, -1) = ca.CustomerAttributesKey
+    LEFT JOIN		#cte1 tmp ON tmp.OrderKey = soa.OrderKey
+    LEFT JOIN		[HC-DW].[DW].dbo.DIM_Campaign dc WITH(NOLOCK) ON dc.campaignkey = soa.CampaignKey
+
+	LEFT JOIN		[hc-dw].dw.dbo.Dim_StaffTeam as dst WITH(NOLOCK) on soa.StaffTeamKey = dst.StaffTeamKey 
+
+	LEFT JOIN		OMEGA.dbo.OrdHead as ORH with(nolock) on soa.OrdNo = ORH.OrdNo 
+
+	LEFT JOIN		[hc-dw].dw.dbo.DIM_IntakeCategory as ig with(nolock) on soa.IntakeCategoryKey = ig.IntakeCategoryKey 
+
+WHERE (ca.TestAccount = 0) and  soa.OrderDteKey>=@INPUT_DATE;     --dynamic variable defined for date above
+
+
+SELECT 
+ a.*	
+,b.[OrdStatus]
+,b.[OrdStatusGrp]		
+,c.[CampaignCode]
+,c.[SubCampaign]
+,c.[Year]
+,c.[Month]
+,c.[Segment] 
+,c.[Country]
+,d.[PromotionId]
+,d.[Promotion]
+,d.[PromPlanId]
+,d.[PromPlan]
+,d.[CountryGroup]
+,e.[ProductNo]
+,e.[SkuNo]
+,e.[ItemNo]
+,e.[ProductDescription]
+,e.[SKUDescription]
+,e.[ItemDescription]
+,e.[OldProductLine]
+,e.[Pattern] --MERCH uses for "Big Buy Bundles"
+,e.[ProductLine]
+,e.[ProductType]
+,e.[AXClass]
+,e.[AXSubCategory]    
+,e.[AXCategory]
+,i.[IntakeCategory]	as IntakeCategory2		
+,i.[IntakeCategoryGroup] as IntakeCategoryGroup2	
+,os.ordsourcegrp_channel as ordsourcegrp_channel	
+,os.subchannel as SubChannel	
+,os.OrdSource as OrdSource
+,mb.ordsourcegrp_channel as MBordsourcegrp_channel	
+,mb.subchannel as MBSubChannel	
+,mb.OrdSource as MBOrdSource	
+,aot.Province
+INTO	  #Final
+FROM	  #View_Fact_SOA a with (nolock)
+LEFT JOIN [HC-DW].dw.dbo.DIM_ORDSTATUS b			with (nolock) ON a.CurrOrdStatus = b.OrdStatusKey 
+LEFT JOIN [HC-DW].dw.dbo.Dim_Campaign  c			with (nolock) ON c.CampaignKey = a.CampaignKey
+LEFT JOIN [HC-DW].dw.dbo.Dim_Promotion d			with (nolock) ON d.PromKey = a.PromKey
+LEFT JOIN [HC-DW].dw.dbo.DIM_Product   e			with (nolock) on e.ProductKey=a.ProductKey
+LEFT JOIN [HC-DW].dw.dbo.DIM_IntakeCategory as i	with (nolock) on a.IntakeCategoryKey = i.IntakeCategoryKey	
+LEFT JOIN [HC-DW].dw.dbo.dim_ordsource as os		with (nolock) on a.ordsourcekey = os.ordsourcekey	
+LEFT JOIN [HC-DW].dw.dbo.dim_ordsource as mb		with (nolock) on a.mbordsourcekey = mb.ordsourcekey	
+
+LEFT JOIN HC_CreditRisk.dbo.A_OrderTable as aot		with (nolock) on a.OrdNo = aot.OrdNo	
+
+WHERE a.OrderDteKey >= @INPUT_DATE	 --dynamic variable defined for date above
+
+
+select * from #Final;
+
+######
+
+
+SELECT
+    dst.FullName AS SalesAgentName,
+    f.Pattern,
+    DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    ) AS SaleWeek,
+    SUM(f.NSVItems) AS TotalItemsSold
+FROM #Final f
+LEFT JOIN [hc-dw].dw.dbo.Dim_StaffTeam dst WITH (NOLOCK)
+    ON f.StaffTeamKey = dst.StaffTeamKey
+WHERE f.NSVItems = 1
+  AND f.GiftFlag = 0
+  AND f.RedIspatchfLAG = 0
+  AND f.MBSubChannel = 'Showrooms'
+  AND f.AXCategory IN ('Geo Bedding', 'Floral Bedding', 'Plain Bedding')
+  AND f.Pattern IN ('Audrey', 'Shirley', 'Kelsey')
+  AND f.OrderDteKey BETWEEN 20250801 AND 20250831   -- August 2025
+GROUP BY
+    dst.FullName,
+    f.Pattern,
+    DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    )
+ORDER BY
+    SaleWeek,
+    TotalItemsSold DESC;
+
+
+###### This query totals the number of specific bedding items sold in showrooms during August 2025, grouped by sales agent and week. It only includes regular, non-gift, non-redispatched items of the Audrey, Shirley, and Kelsey patterns in selected bedding categories. The results are sorted first by the highest total items sold and then by week number for tie-breaking. ######
+
+
+
+	SELECT
+    dst.FullName AS SalesAgentName,
+    DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    ) AS SaleWeek,
+    SUM(f.NSVItems) AS TotalItemsSold
+FROM #Final f
+LEFT JOIN [hc-dw].dw.dbo.Dim_StaffTeam dst WITH (NOLOCK)
+    ON f.StaffTeamKey = dst.StaffTeamKey
+WHERE f.NSVItems = 1
+  AND f.GiftFlag = 0
+  AND f.RedispatchFlag = 0
+  AND f.MBSubChannel = 'Showrooms'
+  AND f.AXCategory IN ('Geo Bedding', 'Floral Bedding', 'Plain Bedding')
+  AND f.Pattern IN ('Audrey', 'Shirley', 'Kelsey')
+  AND f.OrderDteKey BETWEEN 20250801 AND 20250831   -- August 2025
+GROUP BY
+    dst.FullName,
+    DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    )
+ORDER BY
+    TotalItemsSold DESC,   -- Highest to lowest
+    SaleWeek;              -- Within the same total, sorted by week
+
+
+###### This query calculates the total number of specific bedding items sold in showrooms during August 2025, grouped by sales agent and week of the sale. It only counts regular, non-gift, non-redispatched items of the patterns Audrey, Shirley, and Kelsey in selected bedding categories. The results are ordered first by week number and then by the highest total items sold within each week. ######
+ 
+
+
+
+	SELECT
+    dst.FullName AS SalesAgentName,
+    DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    ) AS SaleWeek,
+    SUM(f.NSVItems) AS TotalItemsSold
+FROM #Final f
+LEFT JOIN [hc-dw].dw.dbo.Dim_StaffTeam dst WITH (NOLOCK)
+    ON f.StaffTeamKey = dst.StaffTeamKey
+WHERE f.NSVItems = 1
+  AND f.GiftFlag = 0
+  AND f.RedispatchFlag = 0
+  AND f.MBSubChannel = 'Showrooms'
+  AND f.AXCategory IN ('Geo Bedding', 'Floral Bedding', 'Plain Bedding')
+  AND f.Pattern IN ('Audrey', 'Shirley', 'Kelsey')
+  AND f.OrderDteKey BETWEEN 20250801 AND 20250831   -- August 2025
+GROUP BY
+    dst.FullName,
+    DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    )
+ORDER BY
+    SaleWeek,           -- Orders by week first
+    TotalItemsSold DESC; -- Then by total sold within that week
+
+
+
+###### This SQL query calculates the total number of specific bedding items sold in showrooms during August 2025. It groups the sales by each sales agent and their team, and by the week of the sale. Only regular, non-gift, non-redispatched sales of the patterns Audrey, Shirley, and Kelsey in selected bedding categories are counted. The result shows each agent’s team, name, week number, and total items sold. #####
+
+
+
+	SELECT
+    dst.AgentTeam,
+    dst.FullName AS SalesAgentName,
+    DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    ) AS SaleWeek,
+    SUM(f.NSVItems) AS TotalItemsSold
+FROM #Final f
+LEFT JOIN [hc-dw].dw.dbo.Dim_StaffTeam dst WITH (NOLOCK)
+    ON f.StaffTeamKey = dst.StaffTeamKey
+WHERE f.NSVItems = 1
+  AND f.GiftFlag = 0
+  AND f.RedispatchFlag = 0
+  AND f.MBSubChannel = 'Showrooms'
+  AND f.AXCategory IN ('Geo Bedding', 'Floral Bedding', 'Plain Bedding')
+  AND f.Pattern IN ('Audrey', 'Shirley', 'Kelsey')
+  AND f.OrderDteKey BETWEEN 20250801 AND 20250831   -- August 2025
+GROUP BY
+    dst.AgentTeam,
+    dst.FullName,
+    DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    )
+ORDER BY
+    SaleWeek,           -- Orders by week first
+    TotalItemsSold DESC; -- Then by total sold within that week
