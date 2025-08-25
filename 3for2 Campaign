@@ -216,7 +216,7 @@ LEFT JOIN [hc-dw].dw.dbo.Dim_StaffTeam dst WITH (NOLOCK)
 WHERE f.NSVItems = 1
   AND f.GiftFlag = 0
   AND f.RedIspatchfLAG = 0
-  AND f.MBSubChannel = 'Showrooms'
+  AND f.MBOrdSourcegrp_channel = 'Showrooms'
   AND f.AXCategory IN ('Geo Bedding', 'Floral Bedding', 'Plain Bedding')
   AND f.Pattern IN ('Audrey', 'Shirley', 'Kelsey')
   AND f.OrderDteKey BETWEEN 20250801 AND 20250831   -- August 2025
@@ -251,7 +251,7 @@ LEFT JOIN [hc-dw].dw.dbo.Dim_StaffTeam dst WITH (NOLOCK)
 WHERE f.NSVItems = 1
   AND f.GiftFlag = 0
   AND f.RedispatchFlag = 0
-  AND f.MBSubChannel = 'Showrooms'
+  AND f.MBOrdSourcegrp_channel = 'Showrooms'
   AND f.AXCategory IN ('Geo Bedding', 'Floral Bedding', 'Plain Bedding')
   AND f.Pattern IN ('Audrey', 'Shirley', 'Kelsey')
   AND f.OrderDteKey BETWEEN 20250801 AND 20250831   -- August 2025
@@ -286,7 +286,7 @@ LEFT JOIN [hc-dw].dw.dbo.Dim_StaffTeam dst WITH (NOLOCK)
 WHERE f.NSVItems = 1
   AND f.GiftFlag = 0
   AND f.RedispatchFlag = 0
-  AND f.MBSubChannel = 'Showrooms'
+  AND f.MBOrdSourcegrp_channel = 'Showrooms'
   AND f.AXCategory IN ('Geo Bedding', 'Floral Bedding', 'Plain Bedding')
   AND f.Pattern IN ('Audrey', 'Shirley', 'Kelsey')
   AND f.OrderDteKey BETWEEN 20250801 AND 20250831   -- August 2025
@@ -322,7 +322,7 @@ LEFT JOIN [hc-dw].dw.dbo.Dim_StaffTeam dst WITH (NOLOCK)
 WHERE f.NSVItems = 1
   AND f.GiftFlag = 0
   AND f.RedispatchFlag = 0
-  AND f.MBSubChannel = 'Showrooms'
+  AND f.MBOrdSourcegrp_channel = 'Showrooms'
   AND f.AXCategory IN ('Geo Bedding', 'Floral Bedding', 'Plain Bedding')
   AND f.Pattern IN ('Audrey', 'Shirley', 'Kelsey')
   AND f.OrderDteKey BETWEEN 20250801 AND 20250831   -- August 2025
@@ -396,4 +396,40 @@ SELECT TOP 2
 FROM EligibleAgents
 ORDER BY NEWID();
 
+#### 
+
+-- I need to use MBOrdSourcegrp_channel and not the MBSubChannel -------------------------------------------------
+SELECT
+    dst.FullName AS SalesAgentName,
+    DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    ) AS SaleWeek,
+    SUM(f.NSVItems) AS TotalItemsSold,
+    SUM(f.NSVAmount) AS TotalNSVAmount
+FROM #Final f
+LEFT JOIN [hc-dw].dw.dbo.Dim_StaffTeam dst WITH (NOLOCK)
+    ON f.StaffTeamKey = dst.StaffTeamKey
+WHERE f.NSVItems = 1
+  AND f.GiftFlag = 0
+  AND f.RedispatchFlag = 0
+  AND f.MBOrdSourcegrp_channel = 'Showrooms'   -- changed here
+  AND f.AXCategory IN ('Geo Bedding', 'Floral Bedding', 'Plain Bedding')
+  AND f.Pattern IN ('Audrey', 'Shirley', 'Kelsey')
+  AND f.OrderDteKey BETWEEN 20250801 AND 20250831   -- August 2025
+  AND DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    ) = 34   -- Only week 34
+GROUP BY
+    dst.FullName,
+    DATEPART(WEEK, TRY_CAST(
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 1, 4) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 5, 2) + '-' +
+        SUBSTRING(CAST(f.OrderDteKey AS CHAR(8)), 7, 2) AS DATE)
+    )
+ORDER BY
+    TotalNSVAmount DESC;   -- Highest NSV first
 
